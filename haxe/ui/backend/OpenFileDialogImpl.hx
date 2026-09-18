@@ -8,7 +8,7 @@ import haxe.ui.core.Platform;
 using StringTools;
 
 class OpenFileDialogImpl extends OpenFileDialogBase {
-    #if heaps_android
+    #if (heaps_android && hl)
 
     /**
      * Android has no path-shaped file dialog: the Storage Access Framework
