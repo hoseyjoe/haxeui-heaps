@@ -413,11 +413,18 @@ class ComponentImpl extends ComponentBase {
                     MouseHelper.notify(MouseEvent.MOUSE_DOWN, __onMouseDown);
                     MouseHelper.notify(MouseEvent.MOUSE_UP, __onMouseUp);
                     _eventMap.set(MouseEvent.MOUSE_DOWN, listener);
+                } else if (_eventMap.get(MouseEvent.MOUSE_DOWN) == null) {
+                    // CLICK booked it (and the MouseHelper notifications) without a listener, so
+                    // it can see presses; a MOUSE_DOWN registered after that still needs its own.
+                    _eventMap.set(MouseEvent.MOUSE_DOWN, listener);
                 }
                 
             case MouseEvent.MOUSE_UP:
                 if (_eventMap.exists(MouseEvent.MOUSE_UP) == false) {
                     MouseHelper.notify(MouseEvent.MOUSE_UP, __onMouseUp);
+                    _eventMap.set(MouseEvent.MOUSE_UP, listener);
+                } else if (_eventMap.get(MouseEvent.MOUSE_UP) == null) {
+                    // booked by CLICK without a listener, as MOUSE_DOWN above
                     _eventMap.set(MouseEvent.MOUSE_UP, listener);
                 }
                 
@@ -556,6 +563,11 @@ class ComponentImpl extends ComponentBase {
                 _eventMap.remove(type);
 
             case MouseEvent.MOUSE_DOWN:
+                if (_eventMap.exists(MouseEvent.CLICK)) {
+                    // CLICK still needs to see presses: back to its listener-less booking
+                    _eventMap.set(MouseEvent.MOUSE_DOWN, null);
+                    return;
+                }
                 _eventMap.remove(type);
                 if (_eventMap.exists(MouseEvent.MOUSE_DOWN) == false
                     && _eventMap.exists(MouseEvent.RIGHT_MOUSE_DOWN) == false) {
@@ -563,6 +575,11 @@ class ComponentImpl extends ComponentBase {
                 }
 
             case MouseEvent.MOUSE_UP:
+                if (_eventMap.exists(MouseEvent.CLICK)) {
+                    // CLICK still needs to see releases: back to its listener-less booking
+                    _eventMap.set(MouseEvent.MOUSE_UP, null);
+                    return;
+                }
                 _eventMap.remove(type);
                 if (_eventMap.exists(MouseEvent.MOUSE_UP) == false
                     && _eventMap.exists(MouseEvent.RIGHT_MOUSE_UP) == false) {
