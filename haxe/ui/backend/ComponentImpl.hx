@@ -352,6 +352,33 @@ class ComponentImpl extends ComponentBase {
         return filterGroup;
     }
 
+    // Draw a filtered component - every clip rect, so every scrollview, list,
+    // tree and dropdown - from a whole screen pixel.
+    //
+    // heaps renders the filtered content into a texture laid out from this
+    // object's absolute position and then composites that texture at the same
+    // position (h2d.Object.drawFilters/emitTile). At a scale that is not a
+    // whole number, layout positions land between pixels (13 at 125% is
+    // 16.25), so the texture's pixels sit a fraction off the screen's and the
+    // composite resamples it: everything clipped came out soft while the text
+    // beside it stayed sharp. 200% hid it - every position is whole there.
+    //
+    // Only the pass's origin moves, not the content: children are rasterised
+    // relative to it and composited back from it, so they land where they
+    // were, and a filter nested inside this one is snapped within a texture
+    // that is itself on the pixel grid.
+    @:noCompletion
+    private override function drawFilters(ctx:h2d.RenderContext) {
+        var ax = absX, ay = absY;
+        var sx = ctx.scene != null ? ctx.scene.viewportScaleX : 1.0;
+        var sy = ctx.scene != null ? ctx.scene.viewportScaleY : 1.0;
+        absX = Math.round(ax * sx) / sx;
+        absY = Math.round(ay * sy) / sy;
+        super.drawFilters(ctx);
+        absX = ax;
+        absY = ay;
+    }
+
     @:noCompletion
     private override function applyStyle(style:Style) {
         /*
