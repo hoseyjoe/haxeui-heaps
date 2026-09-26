@@ -11,16 +11,29 @@ class AssetsImpl extends AssetsBase {
         return #if (lime || flash || js) true #else false #end;
     }
 
+    /** How much bigger than their plain name the `name@4x.png` images are. */
+    public static inline var HI_RES_FACTOR:Int = 4;
+
     private override function getImageInternal(resourceId:String, callback:haxe.ui.assets.ImageInfo->Void) {
         try {
             var loader:hxd.res.Loader = hxd.Res.loader;
             if (loader != null) {
+                // A `name@4x.png` next to `name.png` is drawn in its place: it measures as the plain
+                // one, and ImageDisplayImpl draws it mipmapped, so it stays sharp at any Toolkit.scale
+                // instead of the plain one being stretched.
+                var dot = resourceId.lastIndexOf(".");
+                var hiRes = dot > 0 ? resourceId.substr(0, dot) + "@" + HI_RES_FACTOR + "x" + resourceId.substr(dot) : null;
+                var factor = 1;
+                if (hiRes != null && resourceId.indexOf("@") < 0 && loader.exists(hiRes)) {
+                    resourceId = hiRes;
+                    factor = HI_RES_FACTOR;
+                }
                 if (loader.exists(resourceId)) {
                     var image:Image = loader.load(resourceId).toImage();
                     var size:Dynamic = image.getSize();
                     var imageInfo:haxe.ui.assets.ImageInfo = {
-                        width: size.width,
-                        height: size.height,
+                        width: Std.int(size.width / factor),
+                        height: Std.int(size.height / factor),
                         data: image.toBitmap()
                     };
                     callback(imageInfo);

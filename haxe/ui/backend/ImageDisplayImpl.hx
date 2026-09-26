@@ -9,9 +9,23 @@ class ImageDisplayImpl extends ImageBase {
         sprite = new h2d.Bitmap();
     }
 
+    /** The image has more pixels than it measures (a `name@4x.png`, see AssetsImpl): always scaled down. */
+    private var _hiRes:Bool = false;
+
     private override function validateData() {
         if (_imageInfo != null) {
-            sprite.tile = h2d.Tile.fromBitmap(_imageInfo.data);
+            var bmp = _imageInfo.data;
+            _hiRes = bmp.width > _imageInfo.width;
+            if (_hiRes) {
+                // Mipmapped, so however far it is scaled down it is filtered from a level near the
+                // size it is drawn at, rather than sampling a few of its pixels and aliasing.
+                var tex = new h3d.mat.Texture(bmp.width, bmp.height, [MipMapped]);
+                tex.uploadBitmap(bmp);
+                tex.mipMap = Linear;
+                sprite.tile = h2d.Tile.fromTexture(tex);
+            } else {
+                sprite.tile = h2d.Tile.fromBitmap(bmp);
+            }
         } else {
             sprite.tile.dispose();
             sprite.tile = null;
@@ -40,7 +54,8 @@ class ImageDisplayImpl extends ImageBase {
                 sprite.scaleY = scaleY;
             }
 
-            sprite.smooth = false;//scaleX != Toolkit.scaleX || scaleY != Toolkit.scaleY;
+            // A plain image stays pixel-exact; a high-resolution one is filtered down to its size.
+            sprite.smooth = _hiRes;
         }
     }
     
