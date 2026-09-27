@@ -14,7 +14,19 @@ class AssetsImpl extends AssetsBase {
     /** How much bigger than their plain name the `name@4x.png` images are. */
     public static inline var HI_RES_FACTOR:Int = 4;
 
+    /** Loaders for images drawn from vectors at whatever size they are shown (ImageDisplayImpl
+        renders them per size). Each takes a resource id and returns null when it is not one of its
+        images; they are asked, in order, before any bitmap is looked for. */
+    public static var vectorLoaders:Array<String->Null<{width:Int, height:Int, source:haxe.ui.backend.heaps.VectorSource}>> = [];
+
     private override function getImageInternal(resourceId:String, callback:haxe.ui.assets.ImageInfo->Void) {
+        for (load in vectorLoaders) {
+            var v = load(resourceId);
+            if (v != null) {
+                callback({width: v.width, height: v.height, data: new haxe.ui.backend.heaps.VectorBitmapData(v.source)});
+                return;
+            }
+        }
         try {
             var loader:hxd.res.Loader = hxd.Res.loader;
             if (loader != null) {

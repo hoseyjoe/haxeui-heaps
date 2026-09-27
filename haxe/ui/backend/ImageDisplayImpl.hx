@@ -1,19 +1,44 @@
 package haxe.ui.backend;
 import haxe.ui.Toolkit;
+import haxe.ui.backend.heaps.VectorBitmapData;
+import haxe.ui.backend.heaps.VectorSource;
 
 class ImageDisplayImpl extends ImageBase {
     public var sprite:h2d.Bitmap;
 
+    /** The displays holding a vector image, for refreshVectors. */
+    static var liveVectors:Array<ImageDisplayImpl> = [];
+
+    /** Renders every vector image on screen again at the size it is drawn: for when what they draw
+        from has changed (an icon palette, say) while their size has not. */
+    public static function refreshVectors() {
+        for (d in liveVectors.copy()) d.syncVector(true);
+    }
+
     public function new() {
         super();
-        sprite = new h2d.Bitmap();
+        sprite = new ImageSprite(this);
     }
 
     /** The image has more pixels than it measures (a `name@4x.png`, see AssetsImpl): always scaled down. */
     private var _hiRes:Bool = false;
 
+    /** A vector image's source (see VectorSource), and the pixel size of the tile it gave us. */
+    private var _vector:VectorSource = null;
+    private var _vectorW:Int = 0;
+    private var _vectorH:Int = 0;
+
     private override function validateData() {
+        releaseVector();
         if (_imageInfo != null) {
+            var vector = Std.downcast(_imageInfo.data, VectorBitmapData);
+            if (vector != null) {
+                _hiRes = false;
+                _vector = vector.source;
+                liveVectors.push(this);
+                syncVector(true);
+                return;
+            }
             var bmp = _imageInfo.data;
             _hiRes = bmp.width > _imageInfo.width;
             if (_hiRes) {
@@ -26,7 +51,7 @@ class ImageDisplayImpl extends ImageBase {
             } else {
                 sprite.tile = h2d.Tile.fromBitmap(bmp);
             }
-        } else {
+        } else if (sprite.tile != null) {
             sprite.tile.dispose();
             sprite.tile = null;
         }
@@ -43,6 +68,10 @@ class ImageDisplayImpl extends ImageBase {
     }
 
     private override function validateDisplay() {
+        if (_vector != null) {
+            syncVector(false);
+            return;
+        }
         if (sprite.tile != null) {
             var scaleX:Float = (_imageWidth / sprite.tile.width);
             if (sprite.scaleX != scaleX) {
@@ -58,11 +87,67 @@ class ImageDisplayImpl extends ImageBase {
             sprite.smooth = _hiRes;
         }
     }
-    
+
+    /** Keeps a vector image's tile at the pixels it covers on screen. `_imageWidth` is in unscaled
+        units: Toolkit.scale reaches the sprite as its ancestors' scale (the root components'), so
+        that is read from the parent's absolute transform. The tile then lands one texel per pixel. */
+    private function syncVector(force:Bool) {
+        if (_vector == null) return;
+        var sx = Toolkit.scaleX, sy = Toolkit.scaleY;
+        if (sprite.parent != null) {
+            var m = sprite.parent.getAbsPos();
+            sx = Math.sqrt(m.a * m.a + m.b * m.b);
+            sy = Math.sqrt(m.c * m.c + m.d * m.d);
+        }
+        var w = Math.round(_imageWidth * sx), h = Math.round(_imageHeight * sy);
+        if (w < 1) w = 1;
+        if (h < 1) h = 1;
+        if (force || sprite.tile == null || w != _vectorW || h != _vectorH) {
+            var old = sprite.tile;
+            sprite.tile = _vector.acquire(w, h);
+            if (old != null) _vector.release(old);
+            _vectorW = w;
+            _vectorH = h;
+        }
+        sprite.scaleX = _imageWidth / w;
+        sprite.scaleY = _imageHeight / h;
+        sprite.smooth = false;
+    }
+
+    private function releaseVector() {
+        if (_vector == null) return;
+        if (sprite.tile != null) _vector.release(sprite.tile);
+        sprite.tile = null;
+        _vector = null;
+        _vectorW = 0;
+        _vectorH = 0;
+        liveVectors.remove(this);
+    }
+
     public override function dispose() {
+        if (_vector != null) {
+            releaseVector();
+            return;
+        }
         if (sprite.tile != null) {
             sprite.tile.dispose();
             sprite.tile = null;
         }
+    }
+}
+
+/** The display's bitmap. For a vector image it checks the on-screen size each frame, so a change
+    of Toolkit.scale re-renders without waiting for haxeui to revalidate the image. */
+private class ImageSprite extends h2d.Bitmap {
+    var owner:ImageDisplayImpl;
+
+    public function new(owner:ImageDisplayImpl) {
+        super();
+        this.owner = owner;
+    }
+
+    override function sync(ctx:h2d.RenderContext) {
+        super.sync(ctx);
+        @:privateAccess owner.syncVector(false);
     }
 }
