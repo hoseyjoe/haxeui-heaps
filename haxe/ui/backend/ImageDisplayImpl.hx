@@ -30,6 +30,13 @@ class ImageDisplayImpl extends ImageBase {
 
     private override function validateData() {
         releaseVector();
+        // releaseVector only clears a vector's tile: a leftover PNG/@4x tile (this display's own,
+        // never a vector's) is still here on any change of _imageInfo, including a vector taking a
+        // PNG's place, so it is disposed here rather than by _vector.release().
+        if (sprite.tile != null) {
+            sprite.tile.dispose();
+            sprite.tile = null;
+        }
         if (_imageInfo != null) {
             var vector = Std.downcast(_imageInfo.data, VectorBitmapData);
             if (vector != null) {
@@ -51,10 +58,9 @@ class ImageDisplayImpl extends ImageBase {
             } else {
                 sprite.tile = h2d.Tile.fromBitmap(bmp);
             }
-        } else if (sprite.tile != null) {
-            sprite.tile.dispose();
-            sprite.tile = null;
         }
+        // _imageInfo == null: nothing to show, and the tile above already covers disposing any
+        // leftover one.
     }
 
     private override function validatePosition() {
@@ -95,9 +101,12 @@ class ImageDisplayImpl extends ImageBase {
         if (_vector == null) return;
         var sx = Toolkit.scaleX, sy = Toolkit.scaleY;
         if (sprite.parent != null) {
-            var m = sprite.parent.getAbsPos();
-            sx = Math.sqrt(m.a * m.a + m.b * m.b);
-            sy = Math.sqrt(m.c * m.c + m.d * m.d);
+            // syncPos (rather than getAbsPos, which allocates a Matrix every call) brings the
+            // parent's matA..matD up to date; they are h2d.Object's private absolute-transform
+            // fields, read directly instead.
+            @:privateAccess sprite.parent.syncPos();
+            @:privateAccess sx = Math.sqrt(sprite.parent.matA * sprite.parent.matA + sprite.parent.matB * sprite.parent.matB);
+            @:privateAccess sy = Math.sqrt(sprite.parent.matC * sprite.parent.matC + sprite.parent.matD * sprite.parent.matD);
         }
         var w = Math.round(_imageWidth * sx), h = Math.round(_imageHeight * sy);
         if (w < 1) w = 1;
@@ -109,9 +118,12 @@ class ImageDisplayImpl extends ImageBase {
             _vectorW = w;
             _vectorH = h;
         }
-        sprite.scaleX = _imageWidth / w;
-        sprite.scaleY = _imageHeight / h;
-        sprite.smooth = false;
+        // Assigning scaleX/scaleY/smooth (even to their current value) marks the sprite's
+        // posChanged, forcing calcAbsPos work on every synced frame: skip the ones unchanged.
+        var scaleX = _imageWidth / w, scaleY = _imageHeight / h;
+        if (sprite.scaleX != scaleX) sprite.scaleX = scaleX;
+        if (sprite.scaleY != scaleY) sprite.scaleY = scaleY;
+        if (sprite.smooth != false) sprite.smooth = false;
     }
 
     private function releaseVector() {
