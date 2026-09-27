@@ -242,6 +242,24 @@ class ComponentImpl extends ComponentBase {
         return child;
     }
 
+    /**
+     * A root component hidden with `Screen.removeComponent(c, false)` stays in the scene, invisible,
+     * in ScreenImpl's `_removedComponents`, so it can be shown again; a menu closes that way. Once
+     * it is destroyed it never will be, but haxeui-core's Screen only disposes a component that is
+     * no longer a root: nothing took it out of the scene, so it stayed there for good, still synced
+     * every frame. Let it go here. (A root removed with dispose also stayed in that list.)
+     */
+    @:noCompletion
+    private override function handleDestroy() {
+        if (parentComponent == null) {
+            @:privateAccess Screen.instance._removedComponents.remove(cast this);
+            if (parent != null) {
+                remove();
+            }
+        }
+        super.handleDestroy();
+    }
+
     @:noCompletion
     private override function handleRemoveComponent(child:Component, dispose:Bool = true):Component {
         removeChild(child);
