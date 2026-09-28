@@ -15,15 +15,18 @@ class AssetsImpl extends AssetsBase {
     public static inline var HI_RES_FACTOR:Int = 4;
 
     /** Loaders for images drawn from vectors at whatever size they are shown (ImageDisplayImpl
-        renders them per size). Each takes a resource id and returns null when it is not one of its
-        images; they are asked, in order, before any bitmap is looked for. */
-    public static var vectorLoaders:Array<String->Null<{width:Int, height:Int, source:haxe.ui.backend.heaps.VectorSource}>> = [];
+        renders them per size). Each takes a resource id; they are asked, in order, before any
+        bitmap is looked for. A loader returns null when the id is not one of its images (the next
+        loader, then the bitmap path, gets it); a source to draw it with; or a null `source` when
+        the id is its but it cannot draw it (a file that would not parse), which is no image: the
+        bitmap decoder is not tried on it. */
+    public static var vectorLoaders:Array<String->Null<{width:Int, height:Int, source:Null<haxe.ui.backend.heaps.VectorSource>}>> = [];
 
     private override function getImageInternal(resourceId:String, callback:haxe.ui.assets.ImageInfo->Void) {
         for (load in vectorLoaders) {
             var v = load(resourceId);
             if (v != null) {
-                callback({width: v.width, height: v.height, data: new haxe.ui.backend.heaps.VectorBitmapData(v.source)});
+                callback(v.source == null ? null : {width: v.width, height: v.height, data: new haxe.ui.backend.heaps.VectorBitmapData(v.source)});
                 return;
             }
         }
