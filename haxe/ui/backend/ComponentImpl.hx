@@ -967,12 +967,30 @@ class ComponentImpl extends ComponentBase {
         if (_deallocate == true) {
             _disposed = true;
             super.onRemove();
+        } else {
+            unregisterInteractives(this);
         }
         if (this.parentComponent == null && Screen.instance.rootComponents.indexOf(cast this) != -1) {
             Screen.instance.removeComponent(cast this, _deallocate);
         }
     }
     
+    // Skipping super.onRemove keeps the subtree allocated, but also skips h2d.Interactive.onRemove,
+    // leaving a removed TextInput in the scene's list of interactives: hit-tested and sent events,
+    // though no longer in the scene (isInteractiveAbove then crashed on its null scene). Take each
+    // out of the list but leave its `scene` set, so Interactive.onHierarchyMoved - what a re-add of
+    // an allocated object calls - registers it again.
+    @:noCompletion
+    private static function unregisterInteractives(o:Object) {
+        var i = Std.downcast(o, h2d.Interactive);
+        if (i != null && @:privateAccess i.scene != null) {
+            @:privateAccess i.scene.removeEventTarget(i, true);
+        }
+        for (c in @:privateAccess o.children) {
+            unregisterInteractives(c);
+        }
+    }
+
     @:noCompletion
     private var lastMouseX:Float = -1;
     @:noCompletion
@@ -1381,7 +1399,7 @@ class ComponentImpl extends ComponentBase {
         var scene = this.getScene();
         if (scene != null) {
             var interactive = scene.getInteractive(x, y);
-            if (interactive != null) {
+            if (interactive != null && interactive.getScene() == scene) { // one left behind has none
                 var n1 = calcObjectIndex(interactive);
                 var n2 = calcObjectIndex(this);
                 if (n1 > n2) {
