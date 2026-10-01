@@ -299,10 +299,7 @@ class TextInputImpl extends TextDisplayImpl {
 
         hideNativeSelection();
 
-        if ( _inputData.password) {
-            trace("TextInput password mode isn't supported in Heaps.");
-            _inputData.password = false; 
-        }
+        scrollableInput.password = _inputData.password;
 
         if (parentComponent.disabled) {
             textInput.canEdit = false;
@@ -537,8 +534,48 @@ private class ScrollingTextInput extends h2d.TextInput {
         `onChange` instead. **/
     public var onCursorMoved:Void->Void = null;
 
+    /**
+        Draw every character as a bullet (`*` if the font has none) while
+        `text` keeps what was typed.
+
+        Masked in `initGlyphs`, the one place heaps turns a string into glyphs:
+        drawing goes through it, and so does every measurement - `calcTextWidth`,
+        and with it the caret, a click's position and the selection. The mask is
+        one character per character, so every index into `text` still means the
+        same place on screen.
+    **/
+    public var password(default, set):Bool = false;
+    function set_password(value:Bool):Bool {
+        if (value != password) {
+            password = value;
+            rebuild();
+        }
+        return value;
+    }
+
     public function new(font:h2d.Font, ?parent:h2d.Object) {
         super(font, parent);
+    }
+
+    override function initGlyphs(text:String, rebuild = true):Void {
+        super.initGlyphs(password ? mask(text) : text, rebuild);
+    }
+
+    function mask(text:String):String {
+        var bullet = font.hasChar(0x2022) ? "•" : "*";
+        var b = new StringBuf();
+        for (i in 0...text.length) {
+            b.add(text.charCodeAt(i) == "\n".code ? "\n" : bullet);
+        }
+        return b.toString();
+    }
+
+    // As in a browser, what was typed into a password field cannot be copied out of it.
+    override function handleKey(e:hxd.Event) {
+        if (password && hxd.Key.isDown(hxd.Key.CTRL) && (e.keyCode == hxd.Key.C || e.keyCode == hxd.Key.X)) {
+            return;
+        }
+        super.handleKey(e);
     }
 
     /** Where the caret's line begins, measured down the text. **/
