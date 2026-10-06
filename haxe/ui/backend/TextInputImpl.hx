@@ -57,9 +57,36 @@ class TextInputImpl extends TextDisplayImpl {
         textInput.onClick = function(e) {
             cast(parentComponent, InteractiveComponent).focus = true;
         }
+        textInput.onSubmit = onSubmit;
         hideNativeSelection();
         selectionSprite = new TextSelection(textInput);
         return textInput;
+    }
+
+    // h2d.TextInput blurs its Interactive when Enter is pressed in a single line input (and only
+    // then calls onSubmit). No other haxeui backend drops focus on Enter, and the FocusManager is
+    // never told about that blur, so take the native focus back. handleKey ignores all input while
+    // cursorIndex < 0, so put the cursor back too (h2d's onBlur reset it).
+    //
+    // Only when the field can still be typed into, which by this point is not a given: the KEY_DOWN
+    // listener for this same key press has already run, and a submit handler routinely moves focus
+    // on, hides the field (a wizard step advancing, a form swapped out) or disables it. Re-focusing
+    // an invisible Interactive is worse than doing nothing: hxd.SceneEvents.checkFocus blurs it on
+    // the next event because it is not visible, and the focus is then NOWHERE - every later
+    // keystroke is dropped by the whole application until something is clicked.
+    private function onSubmit() {
+        if (parentComponent == null) {
+            return;
+        }
+        var c = cast(parentComponent, InteractiveComponent);
+        // `hidden` reports a hidden ancestor as well, which is the common case here: the container
+        // the field sits in is swapped out, while the field itself was never touched.
+        if (c.focus == false || c.hidden == true || c.disabled == true) {
+            return;
+        }
+        textInput.focus();
+        textInput.cursorIndex = textInput.getTextLength();
+        keepCursorInView();
     }
 
     // Whatever heaps would draw for the selection, draw none of it: the tile keeps
@@ -272,10 +299,7 @@ class TextInputImpl extends TextDisplayImpl {
 
         hideNativeSelection();
 
-        if ( _inputData.password) {
-            trace("TextInput password mode isn't supported in Heaps.");
-            _inputData.password = false; 
-        }
+        scrollableInput.password = _inputData.password;
 
         if (parentComponent.disabled) {
             textInput.canEdit = false;
@@ -510,8 +534,48 @@ private class ScrollingTextInput extends h2d.TextInput {
         `onChange` instead. **/
     public var onCursorMoved:Void->Void = null;
 
+    /**
+        Draw every character as a bullet (`*` if the font has none) while
+        `text` keeps what was typed.
+
+        Masked in `initGlyphs`, the one place heaps turns a string into glyphs:
+        drawing goes through it, and so does every measurement - `calcTextWidth`,
+        and with it the caret, a click's position and the selection. The mask is
+        one character per character, so every index into `text` still means the
+        same place on screen.
+    **/
+    public var password(default, set):Bool = false;
+    function set_password(value:Bool):Bool {
+        if (value != password) {
+            password = value;
+            rebuild();
+        }
+        return value;
+    }
+
     public function new(font:h2d.Font, ?parent:h2d.Object) {
         super(font, parent);
+    }
+
+    override function initGlyphs(text:String, rebuild = true):Void {
+        super.initGlyphs(password ? mask(text) : text, rebuild);
+    }
+
+    function mask(text:String):String {
+        var bullet = font.hasChar(0x2022) ? "•" : "*";
+        var b = new StringBuf();
+        for (i in 0...text.length) {
+            b.add(text.charCodeAt(i) == "\n".code ? "\n" : bullet);
+        }
+        return b.toString();
+    }
+
+    // As in a browser, what was typed into a password field cannot be copied out of it.
+    override function handleKey(e:hxd.Event) {
+        if (password && hxd.Key.isDown(hxd.Key.CTRL) && (e.keyCode == hxd.Key.C || e.keyCode == hxd.Key.X)) {
+            return;
+        }
+        super.handleKey(e);
     }
 
     /** Where the caret's line begins, measured down the text. **/

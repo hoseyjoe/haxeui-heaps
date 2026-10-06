@@ -242,6 +242,24 @@ class ComponentImpl extends ComponentBase {
         return child;
     }
 
+    /**
+     * A root component hidden with `Screen.removeComponent(c, false)` stays in the scene, invisible,
+     * in ScreenImpl's `_removedComponents`, so it can be shown again; a menu closes that way. Once
+     * it is destroyed it never will be, but haxeui-core's Screen only disposes a component that is
+     * no longer a root: nothing took it out of the scene, so it stayed there for good, still synced
+     * every frame. Let it go here. (A root removed with dispose also stayed in that list.)
+     */
+    @:noCompletion
+    private override function handleDestroy() {
+        if (parentComponent == null) {
+            @:privateAccess Screen.instance._removedComponents.remove(cast this);
+            if (parent != null) {
+                remove();
+            }
+        }
+        super.handleDestroy();
+    }
+
     @:noCompletion
     private override function handleRemoveComponent(child:Component, dispose:Bool = true):Component {
         removeChild(child);
@@ -352,6 +370,33 @@ class ComponentImpl extends ComponentBase {
         return filterGroup;
     }
 
+    // Draw a filtered component - every clip rect, so every scrollview, list,
+    // tree and dropdown - from a whole screen pixel.
+    //
+    // heaps renders the filtered content into a texture laid out from this
+    // object's absolute position and then composites that texture at the same
+    // position (h2d.Object.drawFilters/emitTile). At a scale that is not a
+    // whole number, layout positions land between pixels (13 at 125% is
+    // 16.25), so the texture's pixels sit a fraction off the screen's and the
+    // composite resamples it: everything clipped came out soft while the text
+    // beside it stayed sharp. 200% hid it - every position is whole there.
+    //
+    // Only the pass's origin moves, not the content: children are rasterised
+    // relative to it and composited back from it, so they land where they
+    // were, and a filter nested inside this one is snapped within a texture
+    // that is itself on the pixel grid.
+    @:noCompletion
+    private override function drawFilters(ctx:h2d.RenderContext) {
+        var ax = absX, ay = absY;
+        var sx = ctx.scene != null ? ctx.scene.viewportScaleX : 1.0;
+        var sy = ctx.scene != null ? ctx.scene.viewportScaleY : 1.0;
+        absX = Math.round(ax * sx) / sx;
+        absY = Math.round(ay * sy) / sy;
+        super.drawFilters(ctx);
+        absX = ax;
+        absY = ay;
+    }
+
     @:noCompletion
     private override function applyStyle(style:Style) {
         /*
@@ -413,11 +458,18 @@ class ComponentImpl extends ComponentBase {
                     MouseHelper.notify(MouseEvent.MOUSE_DOWN, __onMouseDown);
                     MouseHelper.notify(MouseEvent.MOUSE_UP, __onMouseUp);
                     _eventMap.set(MouseEvent.MOUSE_DOWN, listener);
+                } else if (_eventMap.get(MouseEvent.MOUSE_DOWN) == null) {
+                    // CLICK booked it (and the MouseHelper notifications) without a listener, so
+                    // it can see presses; a MOUSE_DOWN registered after that still needs its own.
+                    _eventMap.set(MouseEvent.MOUSE_DOWN, listener);
                 }
                 
             case MouseEvent.MOUSE_UP:
                 if (_eventMap.exists(MouseEvent.MOUSE_UP) == false) {
                     MouseHelper.notify(MouseEvent.MOUSE_UP, __onMouseUp);
+                    _eventMap.set(MouseEvent.MOUSE_UP, listener);
+                } else if (_eventMap.get(MouseEvent.MOUSE_UP) == null) {
+                    // booked by CLICK without a listener, as MOUSE_DOWN above
                     _eventMap.set(MouseEvent.MOUSE_UP, listener);
                 }
                 
@@ -556,6 +608,11 @@ class ComponentImpl extends ComponentBase {
                 _eventMap.remove(type);
 
             case MouseEvent.MOUSE_DOWN:
+                if (_eventMap.exists(MouseEvent.CLICK)) {
+                    // CLICK still needs to see presses: back to its listener-less booking
+                    _eventMap.set(MouseEvent.MOUSE_DOWN, null);
+                    return;
+                }
                 _eventMap.remove(type);
                 if (_eventMap.exists(MouseEvent.MOUSE_DOWN) == false
                     && _eventMap.exists(MouseEvent.RIGHT_MOUSE_DOWN) == false) {
@@ -563,6 +620,11 @@ class ComponentImpl extends ComponentBase {
                 }
 
             case MouseEvent.MOUSE_UP:
+                if (_eventMap.exists(MouseEvent.CLICK)) {
+                    // CLICK still needs to see releases: back to its listener-less booking
+                    _eventMap.set(MouseEvent.MOUSE_UP, null);
+                    return;
+                }
                 _eventMap.remove(type);
                 if (_eventMap.exists(MouseEvent.MOUSE_UP) == false
                     && _eventMap.exists(MouseEvent.RIGHT_MOUSE_UP) == false) {
@@ -905,12 +967,30 @@ class ComponentImpl extends ComponentBase {
         if (_deallocate == true) {
             _disposed = true;
             super.onRemove();
+        } else {
+            unregisterInteractives(this);
         }
         if (this.parentComponent == null && Screen.instance.rootComponents.indexOf(cast this) != -1) {
             Screen.instance.removeComponent(cast this, _deallocate);
         }
     }
     
+    // Skipping super.onRemove keeps the subtree allocated, but also skips h2d.Interactive.onRemove,
+    // leaving a removed TextInput in the scene's list of interactives: hit-tested and sent events,
+    // though no longer in the scene (isInteractiveAbove then crashed on its null scene). Take each
+    // out of the list but leave its `scene` set, so Interactive.onHierarchyMoved - what a re-add of
+    // an allocated object calls - registers it again.
+    @:noCompletion
+    private static function unregisterInteractives(o:Object) {
+        var i = Std.downcast(o, h2d.Interactive);
+        if (i != null && @:privateAccess i.scene != null) {
+            @:privateAccess i.scene.removeEventTarget(i, true);
+        }
+        for (c in @:privateAccess o.children) {
+            unregisterInteractives(c);
+        }
+    }
+
     @:noCompletion
     private var lastMouseX:Float = -1;
     @:noCompletion
@@ -1319,7 +1399,7 @@ class ComponentImpl extends ComponentBase {
         var scene = this.getScene();
         if (scene != null) {
             var interactive = scene.getInteractive(x, y);
-            if (interactive != null) {
+            if (interactive != null && interactive.getScene() == scene) { // one left behind has none
                 var n1 = calcObjectIndex(interactive);
                 var n2 = calcObjectIndex(this);
                 if (n1 > n2) {
