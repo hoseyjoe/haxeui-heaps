@@ -114,7 +114,17 @@ class ComponentImpl extends ComponentBase {
         _maskGraphics.x = value.left;//this.left;
         _maskGraphics.y = value.top;//this.top;
 
-        // is this a hack? We dont want to move the component if the clip rect is the 
+        // Where layout put this component, which the scroll is subtracted
+        // FROM. It used to be the parent's borderSize alone, which is right
+        // only while the parent has no padding: a scrollview's contents are
+        // laid out at (paddingLeft + border, paddingTop + border), so any
+        // padding on it was dropped the moment it scrolled — drawn at the
+        // edge, while cacheScreenPos (left/top minus the clip) hit-tests
+        // them where layout put them. The mask is a child, so it follows.
+        var homeX:Float = this.left != null ? Math.fround(this.left) : borderSize;
+        var homeY:Float = this.top != null ? Math.fround(this.top) : borderSize;
+
+        // is this a hack? We dont want to move the component if the clip rect is the
         // full size of the component (like in the case of clip:true), feels wrong
         // for some reason, but without this, clip:true components move around
         // when they shouldnt (which i dont fully understand)
@@ -130,7 +140,7 @@ class ComponentImpl extends ComponentBase {
                     }
                 }
             }
-            this.x = -value.left + borderSize + offsetX;
+            this.x = -value.left + homeX + offsetX;
             _clipOwnsX = true;
         } else if (_clipOwnsX) {
             // The clip translated this component before and now matches its
@@ -139,7 +149,7 @@ class ComponentImpl extends ComponentBase {
             // this, a scrolled-to-bottom scrollview that is then cleared
             // keeps its contents shifted by the old scroll offset — drawn
             // entirely outside the mask, a scrollview that "appears gone".
-            this.x = -value.left + borderSize;
+            this.x = -value.left + homeX;
             _clipOwnsX = false;
         }
         if (this.height != value.height) {
@@ -154,11 +164,11 @@ class ComponentImpl extends ComponentBase {
                     }
                 }
             }
-            this.y = -value.top + borderSize + offsetY;
+            this.y = -value.top + homeY + offsetY;
             _clipOwnsY = true;
         } else if (_clipOwnsY) {
             // Same as x above: undo a stale vertical scroll translation.
-            this.y = -value.top + borderSize;
+            this.y = -value.top + homeY;
             _clipOwnsY = false;
         }
     }
