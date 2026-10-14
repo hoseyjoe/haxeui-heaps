@@ -994,7 +994,7 @@ class ComponentImpl extends ComponentBase {
     private static function unregisterInteractives(o:Object) {
         var i = Std.downcast(o, h2d.Interactive);
         if (i != null && @:privateAccess i.scene != null) {
-            @:privateAccess i.scene.removeEventTarget(i, true);
+            @:privateAccess i.scene.removeEventTarget(i);
         }
         for (c in @:privateAccess o.children) {
             unregisterInteractives(c);
