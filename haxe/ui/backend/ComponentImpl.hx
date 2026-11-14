@@ -1195,6 +1195,9 @@ class ComponentImpl extends ComponentBase {
                 if (isInteractiveAbove(x, y)) {
                     return;
                 }
+                if (isOccluded(x, y)) {
+                    return;
+                }
 
                 _mouseDownFlag = true;
                 
@@ -1323,6 +1326,9 @@ class ComponentImpl extends ComponentBase {
                 return;
             }
             */
+            if (isOccluded(x, y)) {
+                return;
+            }
             
             _mouseDownFlag = false;
             var mouseDelta:Float = MathUtil.distance(x, y, _lastClickX, _lastClickY);
@@ -1361,6 +1367,10 @@ class ComponentImpl extends ComponentBase {
             return;
         }
 
+        if (isOccluded(lastMouseX, lastMouseY)) {
+            return;
+        }
+
         var mouseEvent = new MouseEvent(MouseEvent.MOUSE_WHEEL);
         mouseEvent.screenX = lastMouseX;
         mouseEvent.screenY = lastMouseY;
@@ -1380,6 +1390,33 @@ class ComponentImpl extends ComponentBase {
         }
 
         return !hasChildRecursive(cast ref, cast array[array.length - 1]);
+    }
+
+    // Within one root every component under the pointer takes a press and the wheel, whatever is
+    // drawn over it (hasComponentOver is not asked on a press): right for a container and what it
+    // holds, wrong for one component laid over another that is not its own - a panel floating over
+    // a list in a Box. A listener on the upper one that cancels the event only works if it was
+    // registered after everything beneath it (MouseHelper calls the newest first), which a row
+    // built later is not.
+    //
+    // So a component that covers what is beneath it says so with the "occludes" class: anything
+    // drawn before it that is neither inside it nor around it takes no press (so no click and no
+    // drag either), double click or wheel at a point it lies under. Releases still reach
+    // everything, so a drag begun elsewhere can end over it.
+    @:noCompletion
+    private function isOccluded(x:Float, y:Float):Bool {
+        var at:Array<Component> = getComponentsAtPoint(x, y);
+        var i = at.length;
+        while (--i >= 0) {
+            var c = at[i];
+            if (c == cast this) {
+                return false; // nothing drawn after this one covers it
+            }
+            if (c.hasClass("occludes") && !hasChildRecursive(cast this, c)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @:noCompletion
