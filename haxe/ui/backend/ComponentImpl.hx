@@ -870,19 +870,32 @@ class ComponentImpl extends ComponentBase {
             b = true;
         }
 
-        // let make sure its in the clip rect too
+        // let make sure its in the clip rect too - every one up the chain, not
+        // only the nearest. Masks nest when drawn, so a component is seen only
+        // where all of its clipping ancestors overlap; testing just the nearest
+        // let a press through to something that is not drawn there. A scroll
+        // view's content inside a container styled `clip: true` (an Absolute, a
+        // Box that clips) is the case: that container's rect is its own whole
+        // area, which holds every child, and the scroll view's window further up
+        // was never asked. Measured: a box scrolled out above a scroll view took
+        // the click meant for a toolbar button drawn over where it would be.
+        // Each step up uses that ancestor's own findClipComponent, which is
+        // cached for the frame like this one's.
         if (b == true) {
             var clip:Component = findClipComponent();
-            if (clip != null) {
-                b = false;
+            while (clip != null) {
+                var rc = clip.componentClipRect;
                 var clipBounds = clip.screenBounds;
-                var sx = (clipBounds.left + (clip.componentClipRect.left * Toolkit.scaleX));
-                var sy = (clipBounds.top + (clip.componentClipRect.top * Toolkit.scaleY));
-                var cx = clip.componentClipRect.width * Toolkit.scaleX;
-                var cy = clip.componentClipRect.height * Toolkit.scaleY;
-                if (x >= sx && y >= sy && x <= sx + cx && y <= sy + cy) {
-                    b = true;
+                var sx = (clipBounds.left + (rc.left * Toolkit.scaleX));
+                var sy = (clipBounds.top + (rc.top * Toolkit.scaleY));
+                var cx = rc.width * Toolkit.scaleX;
+                var cy = rc.height * Toolkit.scaleY;
+                if (!(x >= sx && y >= sy && x <= sx + cx && y <= sy + cy)) {
+                    b = false;
+                    break;
                 }
+                var above = clip.parentComponent;
+                clip = above == null ? null : above.findClipComponent();
             }
         }
         return b;
