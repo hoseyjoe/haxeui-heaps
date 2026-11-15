@@ -158,6 +158,20 @@ private class ImageSprite extends h2d.Bitmap {
         this.owner = owner;
     }
 
+    /** An unfiltered image starts on a whole screen pixel. Its texels are sampled one per pixel
+        (a vector's tile, a plain bitmap at 100%), so placed half a pixel off - centred in a space
+        an odd number of pixels larger than it, or at a layout position that a scale of 125% or
+        150% puts between pixels - each pixel's sample falls on the edge between two texels and
+        goes either way: a row or column dropped and another doubled. A filtered (high-resolution)
+        image blends its texels and is left where it is laid out. */
+    override function calcAbsPos() {
+        super.calcAbsPos();
+        if (!smooth && matB == 0 && matC == 0) {
+            absX = Math.round(absX);
+            absY = Math.round(absY);
+        }
+    }
+
     override function sync(ctx:h2d.RenderContext) {
         super.sync(ctx);
         @:privateAccess owner.syncVector(false);
